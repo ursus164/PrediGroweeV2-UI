@@ -1,0 +1,151 @@
+#!/bin/bash
+# Pre-commit hook for PrediGroweeV2-UI
+# Automatic security checks before commit
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo -e "${GREEN}🔒 Running pre-commit security checks...${NC}\n"
+
+# 1. Check for hardcoded secrets
+echo -e "${YELLOW}[1/9] Checking for hardcoded secrets...${NC}"
+if git diff --cached --name-only | xargs grep -nHE '(password|secret|api[_-]?key|token|auth)["\s]*[:=]["\s]*[^"]{8,}' 2>/dev/null; then
+    echo -e "${RED}❌ ERROR: Possible hardcoded secrets detected!${NC}"
+    echo -e "${YELLOW}Remove sensitive data before committing.${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ No hardcoded secrets${NC}\n"
+
+# 2. Check file sizes
+echo -e "${YELLOW}[2/9] Checking file sizes...${NC}"
+MAX_SIZE=1048576 # 1MB
+for file in $(git diff --cached --name-only); do
+    if [ -f "$file" ]; then
+        size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
+        if [ "$size" -gt "$MAX_SIZE" ]; then
+            echo -e "${RED}❌ ERROR: File $file is too large ($(($size / 1024))KB > 1MB)${NC}"
+            echo -e "${YELLOW}Use Git LFS for large files.${NC}"
+            exit 1
+        fi
+    fi
+done
+echo -e "${GREEN}✓ All files within size limit${NC}\n"
+
+# 3. Check for trailing whitespace
+echo -e "${YELLOW}[3/9] Checking for trailing whitespace...${NC}"
+if git diff --cached --check; then
+    echo -e "${GREEN}✓ No trailing whitespace${NC}\n"
+else
+    echo -e "${RED}❌ ERROR: Trailing whitespace found!${NC}"
+    echo -e "${YELLOW}Fix with: git diff --cached --check${NC}"
+    exit 1
+fi
+
+# 4. Check for merge conflict markers
+echo -e "${YELLOW}[4/9] Checking for merge conflict markers...${NC}"
+if git diff --cached --name-only | xargs grep -n "^<<<<<<< \|^=======$\|^>>>>>>> " 2>/dev/null; then
+    echo -e "${RED}❌ ERROR: Merge conflict markers found!${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ No merge conflicts${NC}\n"
+
+# 5. Check Dockerfile
+echo -e "${YELLOW}[5/9] Checking Dockerfiles...${NC}"
+for dockerfile in $(git diff --cached --name-only | grep -i dockerfile); do
+    if [ -f "$dockerfile" ]; then
+        if command -v hadolint &> /dev/null; then
+            echo "  Running hadolint for $dockerfile..."
+            hadolint_output=$(hadolint "$dockerfile" 2>&1)
+            if [ $? -ne 0 ]; then
+                echo -e "${RED}❌ ERROR: Hadolint found issues in $dockerfile:${NC}"
+                echo "$hadolint_output"
+                exit 1
+            fi
+        else
+            if grep -q ":latest" "$dockerfile"; then
+                echo -e "${YELLOW}⚠️  WARNING: $dockerfile uses :latest tag${NC}"
+            fi
+            if ! grep -q "^USER" "$dockerfile"; then
+                echo -e "${YELLOW}⚠️  WARNING: $dockerfile doesn't specify USER directive${NC}"
+            fi
+        fi
+    fi
+done
+echo -e "${GREEN}✓ Dockerfile checked${NC}\n"
+
+# 6. ESLint security check
+echo -e "${YELLOW}[6/9] Running ESLint security check...${NC}"
+if [ -f "package.json" ] && command -v npm &> /dev/null; then
+    ESLINT_OUTPUT=$(npm run lint 2>&1)
+    if echo "$ESLINT_OUTPUT" | grep -i "error"; then
+        echo -e "${RED}❌ ERROR: ESLint found errors:${NC}"
+        echo "$ESLINT_OUTPUT"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ ESLint OK${NC}\n"
+else
+    echo -e "${YELLOW}⚠️  Skipped (no npm or package.json)${NC}\n"
+fi
+
+# 7. TypeScript type check
+echo -e "${YELLOW}[7/9] Checking TypeScript types...${NC}"
+if [ -f "tsconfig.json" ] && command -v npm &> /dev/null; then
+    TYPE_CHECK_OUTPUT=$(npm run type-check 2>&1)
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}❌ ERROR: TypeScript type check failed:${NC}"
+        echo "$TYPE_CHECK_OUTPUT" | grep -A 5 "error TS"
+        echo ""
+        echo -e "${YELLOW}Run 'npm run type-check' to see all errors${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ TypeScript types OK${NC}\n"
+else
+    echo -e "${YELLOW}⚠️  Skipped (no tsconfig.json or npm)${NC}\n"
+fi
+
+# 8. Prettier formatting check
+echo -e "${YELLOW}[8/9] Checking Prettier formatting...${NC}"
+if command -v prettier &> /dev/null || [ -f "node_modules/.bin/prettier" ]; then
+    PRETTIER_CMD="prettier"
+    [ -f "node_modules/.bin/prettier" ] && PRETTIER_CMD="./node_modules/.bin/prettier"
+    JS_TS_FILES=$(git diff --cached --name-only | grep -E '\.(js|jsx|ts|tsx)$' || true)
+    if [ -n "$JS_TS_FILES" ]; then
+        PRETTIER_OUTPUT=$($PRETTIER_CMD --check $JS_TS_FILES 2>&1)
+        if [ $? -ne 0 ]; then
+            echo -e "${RED}❌ ERROR: Prettier formatting issues:${NC}"
+            echo "$PRETTIER_OUTPUT"
+            echo -e "${YELLOW}Run: prettier --write <files>${NC}"
+            exit 1
+        else
+            echo -e "${GREEN}✓ Prettier OK${NC}\n"
+        fi
+    else
+        echo -e "${YELLOW}⚠️  Skipped (no JS/TS files)${NC}\n"
+    fi
+else
+    echo -e "${YELLOW}⚠️  Skipped (prettier not installed)${NC}\n"
+fi
+
+# 9. npm audit
+echo -e "${YELLOW}[9/9] Checking npm audit...${NC}"
+if git diff --cached --name-only | grep -q "package-lock.json"; then
+    if command -v npm &> /dev/null; then
+        audit_output=$(npm audit --audit-level=high 2>&1)
+        if echo "$audit_output" | grep -q "high\|critical"; then
+            echo -e "${RED}❌ ERROR: npm audit found high/critical vulnerabilities:${NC}"
+            echo "$audit_output" | head -30
+            echo ""
+            echo -e "${YELLOW}Run 'npm audit fix' to fix vulnerabilities${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}✓ npm audit OK${NC}\n"
+    fi
+else
+    echo -e "${YELLOW}⚠️  Skipped (package-lock.json not changed)${NC}\n"
+fi
+
+echo -e "${GREEN}✅ All pre-commit security checks passed!${NC}"
+exit 0
