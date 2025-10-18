@@ -59,6 +59,8 @@ jobs:
           image: frontend:${{ matrix.dockerfile }}
           exit-code: 1
           failure-threshold: INFO
+          accept-keys: CIS-DI-0010
+          # CIS-DI-0010: Do not use ARG/ENV for secrets (false positive for URLs)
           # Najbardziej strict: failuje na FATAL > WARN > INFO
 
   npm-audit:
@@ -302,16 +304,30 @@ jobs:
         run: npm ci
 
       - name: Run full ESLint check
+        id: eslint
+        continue-on-error: true
         run: npm run lint -- --format=json --output-file=eslint-report.json
 
       - name: Run Prettier check
+        id: prettier
+        continue-on-error: true
         run: npx prettier --check "**/*.{ts,tsx,js,jsx,json,css,scss}" 2>&1 | tee prettier-report.txt
 
       - name: Run Next.js build check
+        id: build
+        continue-on-error: true
         run: npm run build 2>&1 | tee build-report.txt
         env:
-          CI: false  # Enable TypeScript/ESLint during build
+          CI: true
           SKIP_ENV_VALIDATION: true
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID: "dummy"
+          NEXT_PUBLIC_AUTH_SERVICE_URL: "http://localhost:8080"
+          NEXT_PUBLIC_QUIZ_SERVICE_URL: "http://localhost:8081"
+          NEXT_PUBLIC_STATS_SERVICE_URL: "http://localhost:8082"
+          NEXT_PUBLIC_IMAGES_SERVICE_URL: "http://localhost:8083"
+          NEXT_PUBLIC_ADMIN_SERVICE_URL: "http://localhost:8084"
+          AUTH_SERVICE_INTERNAL_URL: "http://auth:8080"
+          NEXT_PUBLIC_RECAPTCHA_SITE_KEY: "dummy"
 
       - name: Generate Frontend Static Analysis Report
         if: success() || failure()
@@ -347,6 +363,15 @@ jobs:
             eslint-report.json
             prettier-report.txt
             build-report.txt
+
+      - name: Fail if any static analysis tool found issues
+        if: steps.eslint.outcome == 'failure' || steps.prettier.outcome == 'failure' || steps.build.outcome == 'failure'
+        run: |
+          echo "Static analysis found issues:"
+          echo "- ESLint: ${{ steps.eslint.outcome }}"
+          echo "- Prettier: ${{ steps.prettier.outcome }}"
+          echo "- Build: ${{ steps.build.outcome }}"
+          exit 1
 
   secret-scan:
     name: Secret Detection (Gitleaks)
