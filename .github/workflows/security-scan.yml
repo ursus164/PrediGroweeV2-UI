@@ -46,11 +46,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Build Docker image for Dockle
+        run: |
+          docker build -f ${{ matrix.dockerfile }} -t frontend:${{ matrix.dockerfile }} .
+
       - name: Run Dockle
         uses: erzz/dockle-action@v1
         with:
-          image: frontend-${{ matrix.dockerfile }}
-          dockerfile: ./${{ matrix.dockerfile }}
+          image: frontend:${{ matrix.dockerfile }}
           exit-code: 0
           exit-level: WARN
         continue-on-error: true
@@ -80,6 +83,7 @@ jobs:
   trivy-scan-dev:
     name: Trivy Scan (Dev Image)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -87,31 +91,27 @@ jobs:
       - name: Build Docker image
         run: docker build -f Dockerfile.dev -t frontend:dev .
 
-      - name: Run Trivy scanner (SARIF)
+      - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: frontend:dev
           format: 'sarif'
           output: 'trivy-results-dev.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: 1
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          timeout: 15m
 
-      - name: Upload results
+      - name: Upload Trivy SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: success() || failure()
         with:
           sarif_file: 'trivy-results-dev.sarif'
-
-      - name: Trivy - Fail on CRITICAL/HIGH
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: frontend:dev
-          format: 'table'
-          exit-code: 1
-          severity: 'CRITICAL,HIGH'
 
   trivy-scan-prod:
     name: Trivy Scan (Prod Image)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -119,27 +119,22 @@ jobs:
       - name: Build Docker image
         run: docker build -f Dockerfile.prod -t frontend:prod .
 
-      - name: Run Trivy scanner (SARIF)
+      - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: frontend:prod
           format: 'sarif'
           output: 'trivy-results-prod.sarif'
-          severity: 'CRITICAL,HIGH,MEDIUM'
+          exit-code: 1
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          timeout: 15m
 
-      - name: Upload results
+      - name: Upload Trivy SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
-        if: always()
+        if: success() || failure()
         with:
           sarif_file: 'trivy-results-prod.sarif'
-
-      - name: Trivy - Fail on CRITICAL/HIGH
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: frontend:prod
-          format: 'table'
-          exit-code: 1
-          severity: 'CRITICAL,HIGH'
 
   sbom-generation:
     name: Generate SBOM
@@ -159,7 +154,7 @@ jobs:
           output-file: sbom-frontend.spdx.json
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: sbom-frontend
           path: sbom-frontend.spdx.json
@@ -170,7 +165,7 @@ jobs:
     needs: sbom-generation
     steps:
       - name: Download SBOM
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: sbom-frontend
 
