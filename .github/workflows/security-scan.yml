@@ -35,8 +35,7 @@ jobs:
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: ./${{ matrix.dockerfile }}
-          # Nie blokuj builda na warnings - tylko raportuj
-          no-fail: true
+          # Fail na warnings - pokazuj realny stan
 
   dockerfile-lint:
     name: Dockle - Dockerfile Security
@@ -57,9 +56,8 @@ jobs:
         uses: erzz/dockle-action@v1
         with:
           image: frontend:${{ matrix.dockerfile }}
-          exit-code: 0
+          exit-code: 1
           failure-threshold: WARN
-        continue-on-error: true
 
   npm-audit:
     name: NPM Security Audit
