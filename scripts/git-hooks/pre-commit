@@ -58,7 +58,7 @@ for dockerfile in $(git diff --cached --name-only | grep -i dockerfile); do
     if [ -f "$dockerfile" ]; then
         if command -v hadolint &> /dev/null; then
             echo "  Running hadolint for $dockerfile..."
-            hadolint_output=$(hadolint "$dockerfile" 2>&1)
+            hadolint_output=$(hadolint --failure-threshold style "$dockerfile" 2>&1)
             if [ $? -ne 0 ]; then
                 echo -e "${RED}❌ ERROR: Hadolint found issues in $dockerfile:${NC}"
                 echo "$hadolint_output"
