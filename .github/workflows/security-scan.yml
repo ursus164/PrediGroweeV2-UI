@@ -119,6 +119,26 @@ jobs:
           scanners: 'vuln,secret'
           timeout: 15m
 
+      - name: Run Trivy vulnerability scanner (JSON for report - all severities)
+        uses: aquasecurity/trivy-action@master
+        if: success() || failure()
+        with:
+          image-ref: frontend:dev
+          format: 'json'
+          output: 'trivy-report-dev.json'
+          exit-code: 0
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          scanners: 'vuln,secret'
+          timeout: 15m
+
+      - name: Upload Trivy JSON Report
+        uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: trivy-report-dev
+          path: trivy-report-dev.json
+
       - name: Upload Trivy SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         if: success() || failure()
@@ -160,6 +180,26 @@ jobs:
           severity: 'CRITICAL,HIGH'
           scanners: 'vuln,secret'
           timeout: 15m
+
+      - name: Run Trivy vulnerability scanner (JSON for report - all severities)
+        uses: aquasecurity/trivy-action@master
+        if: success() || failure()
+        with:
+          image-ref: frontend:prod
+          format: 'json'
+          output: 'trivy-report-prod.json'
+          exit-code: 0
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          scanners: 'vuln,secret'
+          timeout: 15m
+
+      - name: Upload Trivy JSON Report
+        uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: trivy-report-prod
+          path: trivy-report-prod.json
 
       - name: Upload Trivy SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
@@ -245,7 +285,6 @@ jobs:
 
       - name: Run ESLint with security rules
         run: npx eslint . --ext .ts,.tsx,.js,.jsx
-        continue-on-error: true
 
   static-analysis-frontend:
     name: Frontend Static Analysis
@@ -263,18 +302,51 @@ jobs:
         run: npm ci
 
       - name: Run full ESLint check
-        run: npm run lint
-        continue-on-error: true
+        run: npm run lint -- --format=json --output-file=eslint-report.json
 
       - name: Run Prettier check
-        run: npx prettier --check "**/*.{ts,tsx,js,jsx,json,css,scss}"
-        continue-on-error: true
+        run: npx prettier --check "**/*.{ts,tsx,js,jsx,json,css,scss}" 2>&1 | tee prettier-report.txt
 
       - name: Run Next.js build check
-        run: npm run build
+        run: npm run build 2>&1 | tee build-report.txt
         env:
           CI: false  # Enable TypeScript/ESLint during build
           SKIP_ENV_VALIDATION: true
+
+      - name: Generate Frontend Static Analysis Report
+        if: success() || failure()
+        run: |
+          mkdir -p reports
+          echo "# Frontend Static Analysis Report" > reports/frontend-static-analysis.md
+          echo "" >> reports/frontend-static-analysis.md
+
+          echo "## ESLint Results" >> reports/frontend-static-analysis.md
+          if [ -f "eslint-report.json" ]; then
+            cat eslint-report.json >> reports/frontend-static-analysis.md
+          fi
+          echo "" >> reports/frontend-static-analysis.md
+
+          echo "## Prettier Results" >> reports/frontend-static-analysis.md
+          if [ -f "prettier-report.txt" ]; then
+            cat prettier-report.txt >> reports/frontend-static-analysis.md
+          fi
+          echo "" >> reports/frontend-static-analysis.md
+
+          echo "## Build Results" >> reports/frontend-static-analysis.md
+          if [ -f "build-report.txt" ]; then
+            tail -100 build-report.txt >> reports/frontend-static-analysis.md
+          fi
+
+      - name: Upload Frontend Static Analysis Report
+        uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: frontend-static-analysis-report
+          path: |
+            reports/frontend-static-analysis.md
+            eslint-report.json
+            prettier-report.txt
+            build-report.txt
 
   secret-scan:
     name: Secret Detection (Gitleaks)
@@ -291,22 +363,169 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   security-summary:
-    name: Security Summary
+    name: Comprehensive Security Report
     runs-on: ubuntu-latest
     needs: [hadolint, dockerfile-lint, npm-audit, trivy-scan-dev, trivy-scan-prod, grype-scan, typescript-check, eslint-security, static-analysis-frontend, secret-scan]
     if: always()
     steps:
-      - name: Summary
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate Security Report
         run: |
-          echo "## 🔒 Frontend Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "# PrediGroweeV2 Frontend - Security Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Completed Scans:" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Dockerfile Best Practices (Hadolint)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Dockerfile Security Lint (Dockle)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ TypeScript Type Check" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Static Analysis (ESLint + Prettier + Build)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ NPM Dependencies Audit" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Container CVE Scan (Trivy)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ SBOM Generation & Scan (Syft + Grype)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Code Security Lint (ESLint)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Secret Detection (Gitleaks)" >> $GITHUB_STEP_SUMMARY
+          echo "**Scan Date:** $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Trivy CVE Summary for dev and prod images
+          echo "## Container Vulnerability Scan (Trivy)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          for image in dev prod; do
+            if [ -f "artifacts/trivy-report-$image/trivy-report-$image.json" ]; then
+              echo "### frontend:$image" >> $GITHUB_STEP_SUMMARY
+
+              CRITICAL=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL")] | length' "artifacts/trivy-report-$image/trivy-report-$image.json" 2>/dev/null || echo "0")
+              HIGH=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH")] | length' "artifacts/trivy-report-$image/trivy-report-$image.json" 2>/dev/null || echo "0")
+              MEDIUM=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM")] | length' "artifacts/trivy-report-$image/trivy-report-$image.json" 2>/dev/null || echo "0")
+              LOW=$(jq '[.Results[]?.Vulnerabilities[]? | select(.Severity=="LOW")] | length' "artifacts/trivy-report-$image/trivy-report-$image.json" 2>/dev/null || echo "0")
+              SECRETS=$(jq '[.Results[]?.Secrets[]?] | length' "artifacts/trivy-report-$image/trivy-report-$image.json" 2>/dev/null || echo "0")
+
+              echo "**Vulnerabilities Found:**" >> $GITHUB_STEP_SUMMARY
+              echo "- CRITICAL: $CRITICAL" >> $GITHUB_STEP_SUMMARY
+              echo "- HIGH: $HIGH" >> $GITHUB_STEP_SUMMARY
+              echo "- MEDIUM: $MEDIUM" >> $GITHUB_STEP_SUMMARY
+              echo "- LOW: $LOW" >> $GITHUB_STEP_SUMMARY
+
+              if [ "$SECRETS" -gt 0 ]; then
+                echo "- Secrets Detected: $SECRETS" >> $GITHUB_STEP_SUMMARY
+              fi
+
+              # List critical CVEs with details
+              if [ "$CRITICAL" -gt 0 ]; then
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "<details><summary>CRITICAL Vulnerabilities ($CRITICAL)</summary>" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+                jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity=="CRITICAL") | "CVE: \(.VulnerabilityID)\nPackage: \(.PkgName) \(.InstalledVersion)\nFixed: \(.FixedVersion // "N/A")\nTitle: \(.Title)\n---"' "artifacts/trivy-report-$image/trivy-report-$image.json" 2>/dev/null >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+                echo "</details>" >> $GITHUB_STEP_SUMMARY
+              fi
+
+              # List high CVEs with details
+              if [ "$HIGH" -gt 0 ]; then
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "<details><summary>HIGH Vulnerabilities ($HIGH)</summary>" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+                jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity=="HIGH") | "CVE: \(.VulnerabilityID)\nPackage: \(.PkgName) \(.InstalledVersion)\nFixed: \(.FixedVersion // "N/A")\nTitle: \(.Title)\n---"' "artifacts/trivy-report-$image/trivy-report-$image.json" 2>/dev/null | head -200 >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+                echo "</details>" >> $GITHUB_STEP_SUMMARY
+              fi
+
+              # List medium CVEs with details
+              if [ "$MEDIUM" -gt 0 ]; then
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "<details><summary>MEDIUM Vulnerabilities ($MEDIUM)</summary>" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+                jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity=="MEDIUM") | "CVE: \(.VulnerabilityID)\nPackage: \(.PkgName) \(.InstalledVersion)\nFixed: \(.FixedVersion // "N/A")\nTitle: \(.Title)\n---"' "artifacts/trivy-report-$image/trivy-report-$image.json" 2>/dev/null | head -200 >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+                echo "</details>" >> $GITHUB_STEP_SUMMARY
+              fi
+
+              # List low CVEs (collapsed by default, just count)
+              if [ "$LOW" -gt 0 ]; then
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "<details><summary>LOW Vulnerabilities ($LOW)</summary>" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+                jq -r '.Results[]?.Vulnerabilities[]? | select(.Severity=="LOW") | "CVE: \(.VulnerabilityID)\nPackage: \(.PkgName) \(.InstalledVersion)\nFixed: \(.FixedVersion // "N/A")\nTitle: \(.Title)\n---"' "artifacts/trivy-report-$image/trivy-report-$image.json" 2>/dev/null | head -100 >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+                echo "</details>" >> $GITHUB_STEP_SUMMARY
+              fi
+
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Frontend Static Analysis Summary
+          echo "## Frontend Static Analysis Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f "artifacts/frontend-static-analysis-report/eslint-report.json" ]; then
+            ESLINT_ERRORS=$(jq '[.[] | select(.errorCount > 0)] | length' "artifacts/frontend-static-analysis-report/eslint-report.json" 2>/dev/null || echo "0")
+            ESLINT_WARNINGS=$(jq '[.[] | select(.warningCount > 0)] | length' "artifacts/frontend-static-analysis-report/eslint-report.json" 2>/dev/null || echo "0")
+
+            if [ "$ESLINT_ERRORS" -gt 0 ] || [ "$ESLINT_WARNINGS" -gt 0 ]; then
+              echo "**ESLint:** $ESLINT_ERRORS errors, $ESLINT_WARNINGS warnings" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "<details><summary>View ESLint Issues</summary>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              jq -r '.[] | select(.errorCount > 0 or .warningCount > 0) | .messages[] | "\(.line):\(.column) - [\(.severity)] \(.message) (\(.ruleId))"' "artifacts/frontend-static-analysis-report/eslint-report.json" 2>/dev/null | head -100 >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "</details>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+          if [ -f "artifacts/frontend-static-analysis-report/prettier-report.txt" ]; then
+            PRETTIER_LINES=$(wc -l < "artifacts/frontend-static-analysis-report/prettier-report.txt" 2>/dev/null || echo "0")
+            if [ "$PRETTIER_LINES" -gt 0 ]; then
+              echo "**Prettier:** Formatting issues found" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "<details><summary>View Prettier Issues</summary>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              cat "artifacts/frontend-static-analysis-report/prettier-report.txt" | head -100 >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+              echo "</details>" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+          if [ -f "artifacts/frontend-static-analysis-report/build-report.txt" ]; then
+            echo "**Build Check:** Completed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "<details><summary>View Build Output</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            tail -100 "artifacts/frontend-static-analysis-report/build-report.txt" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Summary Statistics
+          echo "## Summary Statistics" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Scan Type | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Dockerfile Best Practices (Hadolint) | Completed |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dockerfile Security (Dockle) | Completed |" >> $GITHUB_STEP_SUMMARY
+          echo "| TypeScript Type Check | Completed |" >> $GITHUB_STEP_SUMMARY
+          echo "| Static Analysis (ESLint + Prettier + Build) | Completed |" >> $GITHUB_STEP_SUMMARY
+          echo "| NPM Dependencies Audit | Completed |" >> $GITHUB_STEP_SUMMARY
+          echo "| Container CVE Scan (Trivy) | Completed (dev + prod) |" >> $GITHUB_STEP_SUMMARY
+          echo "| SBOM Generation & Scan (Grype) | Completed |" >> $GITHUB_STEP_SUMMARY
+          echo "| Secret Detection (Gitleaks) | Completed |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Detailed reports available in workflow artifacts**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Tip: Download artifacts to view full JSON/Markdown reports" >> $GITHUB_STEP_SUMMARY
