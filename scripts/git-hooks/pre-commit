@@ -13,7 +13,8 @@ echo -e "${GREEN}🔒 Running pre-commit security checks (full repository scan).
 
 # 1. Check for hardcoded secrets - CAŁE REPO
 echo -e "${YELLOW}[1/9] Checking for hardcoded secrets in all files...${NC}"
-if grep -rI '(password|secret|api[_-]?key|token|auth)["\s]*[:=]["\s]*[^"]{8,}' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.next 2>/dev/null; then
+# Pattern excludes environment variable reads (os.Getenv, process.env)
+if grep -rI '(password|secret|api[_-]?key|token|auth)["\s]*[:=]["\s]*[^"]{8,}' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.next 2>/dev/null | grep -v "os.Getenv" | grep -v "process.env" | grep -v "getenv"; then
     echo -e "${RED}❌ ERROR: Possible hardcoded secrets detected!${NC}"
     echo -e "${YELLOW}Remove sensitive data before committing.${NC}"
     exit 1
