@@ -1,5 +1,6 @@
 #!/bin/bash
 # Pre-commit hook for PrediGroweeV2-UI
+# ZAWSZE SKANUJE CAŁE REPO (nie tylko zmienione pliki)
 # Automatic security checks before commit
 
 # Colors for output
@@ -8,11 +9,11 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}🔒 Running pre-commit security checks...${NC}\n"
+echo -e "${GREEN}🔒 Running pre-commit security checks (full repository scan)...${NC}\n"
 
-# 1. Check for hardcoded secrets
-echo -e "${YELLOW}[1/9] Checking for hardcoded secrets...${NC}"
-if git diff --cached --name-only | xargs grep -nHE '(password|secret|api[_-]?key|token|auth)["\s]*[:=]["\s]*[^"]{8,}' 2>/dev/null; then
+# 1. Check for hardcoded secrets - CAŁE REPO
+echo -e "${YELLOW}[1/9] Checking for hardcoded secrets in all files...${NC}"
+if grep -rI '(password|secret|api[_-]?key|token|auth)["\s]*[:=]["\s]*[^"]{8,}' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.next 2>/dev/null; then
     echo -e "${RED}❌ ERROR: Possible hardcoded secrets detected!${NC}"
     echo -e "${YELLOW}Remove sensitive data before committing.${NC}"
     exit 1
@@ -52,9 +53,9 @@ if git diff --cached --name-only | xargs grep -n "^<<<<<<< \|^=======$\|^>>>>>>>
 fi
 echo -e "${GREEN}✓ No merge conflicts${NC}\n"
 
-# 5. Check Dockerfile
-echo -e "${YELLOW}[5/9] Checking Dockerfiles...${NC}"
-for dockerfile in $(git diff --cached --name-only | grep -i dockerfile); do
+# 5. Check Dockerfile - WSZYSTKIE
+echo -e "${YELLOW}[5/9] Checking all Dockerfiles...${NC}"
+for dockerfile in Dockerfile.dev Dockerfile.prod; do
     if [ -f "$dockerfile" ]; then
         if command -v hadolint &> /dev/null; then
             echo "  Running hadolint for $dockerfile..."
@@ -74,10 +75,10 @@ for dockerfile in $(git diff --cached --name-only | grep -i dockerfile); do
         fi
     fi
 done
-echo -e "${GREEN}✓ Dockerfile checked${NC}\n"
+echo -e "${GREEN}✓ All Dockerfiles checked${NC}\n"
 
-# 6. ESLint security check
-echo -e "${YELLOW}[6/9] Running ESLint security check...${NC}"
+# 6. ESLint security check - CAŁE REPO
+echo -e "${YELLOW}[6/9] Running ESLint on all files...${NC}"
 if [ -f "package.json" ] && command -v npm &> /dev/null; then
     ESLINT_OUTPUT=$(npm run lint 2>&1)
     if echo "$ESLINT_OUTPUT" | grep -i "error"; then
@@ -90,7 +91,7 @@ else
     echo -e "${YELLOW}⚠️  Skipped (no npm or package.json)${NC}\n"
 fi
 
-# 7. TypeScript type check
+# 7. TypeScript type check - CAŁE REPO
 echo -e "${YELLOW}[7/9] Checking TypeScript types...${NC}"
 if [ -f "tsconfig.json" ] && command -v npm &> /dev/null; then
     TYPE_CHECK_OUTPUT=$(npm run type-check 2>&1)
@@ -106,45 +107,38 @@ else
     echo -e "${YELLOW}⚠️  Skipped (no tsconfig.json or npm)${NC}\n"
 fi
 
-# 8. Prettier formatting check
-echo -e "${YELLOW}[8/9] Checking Prettier formatting...${NC}"
+# 8. Prettier formatting check - WSZYSTKIE PLIKI
+echo -e "${YELLOW}[8/9] Checking Prettier formatting on all files...${NC}"
 if command -v prettier &> /dev/null || [ -f "node_modules/.bin/prettier" ]; then
     PRETTIER_CMD="prettier"
-    [ -f "node_modules/.bin/prettier" ] && PRETTIER_CMD="./node_modules/.bin/prettier"
-    JS_TS_FILES=$(git diff --cached --name-only | grep -E '\.(js|jsx|ts|tsx)$' || true)
-    if [ -n "$JS_TS_FILES" ]; then
-        PRETTIER_OUTPUT=$($PRETTIER_CMD --check $JS_TS_FILES 2>&1)
-        if [ $? -ne 0 ]; then
-            echo -e "${RED}❌ ERROR: Prettier formatting issues:${NC}"
-            echo "$PRETTIER_OUTPUT"
-            echo -e "${YELLOW}Run: prettier --write <files>${NC}"
-            exit 1
-        else
-            echo -e "${GREEN}✓ Prettier OK${NC}\n"
-        fi
+    [ -f "node_modules/.bin/prettier" ] && PRETTIER_CMD="npx prettier"
+    PRETTIER_OUTPUT=$($PRETTIER_CMD --check "src/**/*.{ts,tsx,js,jsx}" 2>&1)
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}❌ ERROR: Prettier formatting issues:${NC}"
+        echo "$PRETTIER_OUTPUT" | head -20
+        echo -e "${YELLOW}Run: prettier --write <files>${NC}"
+        exit 1
     else
-        echo -e "${YELLOW}⚠️  Skipped (no JS/TS files)${NC}\n"
+        echo -e "${GREEN}✓ Prettier OK${NC}\n"
     fi
 else
     echo -e "${YELLOW}⚠️  Skipped (prettier not installed)${NC}\n"
 fi
 
-# 9. npm audit
-echo -e "${YELLOW}[9/9] Checking npm audit...${NC}"
-if git diff --cached --name-only | grep -q "package-lock.json"; then
-    if command -v npm &> /dev/null; then
-        audit_output=$(npm audit --audit-level=high 2>&1)
-        if echo "$audit_output" | grep -q "high\|critical"; then
-            echo -e "${RED}❌ ERROR: npm audit found high/critical vulnerabilities:${NC}"
-            echo "$audit_output" | head -30
-            echo ""
-            echo -e "${YELLOW}Run 'npm audit fix' to fix vulnerabilities${NC}"
-            exit 1
-        fi
-        echo -e "${GREEN}✓ npm audit OK${NC}\n"
+# 9. npm audit - ZAWSZE
+echo -e "${YELLOW}[9/9] Running npm audit...${NC}"
+if command -v npm &> /dev/null && [ -f "package.json" ]; then
+    audit_output=$(npm audit --audit-level=high 2>&1)
+    if echo "$audit_output" | grep -q "high\|critical"; then
+        echo -e "${RED}❌ ERROR: npm audit found high/critical vulnerabilities:${NC}"
+        echo "$audit_output" | head -30
+        echo ""
+        echo -e "${YELLOW}Run 'npm audit fix' to fix vulnerabilities${NC}"
+        exit 1
     fi
+    echo -e "${GREEN}✓ npm audit OK${NC}\n"
 else
-    echo -e "${YELLOW}⚠️  Skipped (package-lock.json not changed)${NC}\n"
+    echo -e "${YELLOW}⚠️  Skipped (npm not available)${NC}\n"
 fi
 
 echo -e "${GREEN}✅ All pre-commit security checks passed!${NC}"

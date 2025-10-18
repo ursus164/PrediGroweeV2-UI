@@ -1,0 +1,6 @@
+# Dockle ignore file - false positives for non-sensitive configuration URLs
+# These are internal service URLs, not secrets
+
+# CIS-DI-0010: Do not use ARG or ENV instructions for sensitive data
+# AUTH_SERVICE_INTERNAL_URL is a configuration URL, not a secret
+CIS-DI-0010 AUTH_SERVICE_INTERNAL_URL

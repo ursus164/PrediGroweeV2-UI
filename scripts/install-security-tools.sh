@@ -57,7 +57,7 @@ else
 fi
 
 # 4. govulncheck - Go Vulnerabilities
-echo -e "\n${YELLOW}[4/5] Instalacja govulncheck (Go Vulnerabilities)...${NC}"
+echo -e "\n${YELLOW}[4/7] Instalacja govulncheck (Go Vulnerabilities)...${NC}"
 if command -v govulncheck &> /dev/null; then
     echo -e "${GREEN}✓ govulncheck już zainstalowany${NC}"
 else
@@ -79,7 +79,7 @@ else
 fi
 
 # 5. Hadolint - Dockerfile Linter
-echo -e "\n${YELLOW}[5/6] Instalacja Hadolint (Dockerfile Linter)...${NC}"
+echo -e "\n${YELLOW}[5/7] Instalacja Hadolint (Dockerfile Linter)...${NC}"
 if command -v hadolint &> /dev/null; then
     echo -e "${GREEN}✓ Hadolint już zainstalowany ($(hadolint --version))${NC}"
 else
@@ -92,7 +92,7 @@ else
 fi
 
 # 6. Dockle - Dockerfile Security Linter
-echo -e "\n${YELLOW}[6/7] Instalacja Dockle (Dockerfile Security Linter)...${NC}"
+echo -e "\n${YELLOW}[6/9] Instalacja Dockle (Dockerfile Security Linter)...${NC}"
 if command -v dockle &> /dev/null; then
     echo -e "${GREEN}✓ Dockle już zainstalowany ($(dockle --version))${NC}"
 else
@@ -104,8 +104,38 @@ else
     echo -e "${GREEN}✓ Dockle zainstalowany${NC}"
 fi
 
-# 7. Instalacja Git Hooks
-echo -e "\n${YELLOW}[7/7] Instalacja Git Hooks...${NC}"
+# 7. Gitleaks - Secret Scanner
+echo -e "\n${YELLOW}[7/9] Instalacja Gitleaks (Secret Scanner)...${NC}"
+if command -v gitleaks &> /dev/null; then
+    echo -e "${GREEN}✓ Gitleaks już zainstalowany ($(gitleaks version))${NC}"
+else
+    echo "  Pobieram i instaluję Gitleaks..."
+    GITLEAKS_VERSION=$(curl -s "https://api.github.com/repos/gitleaks/gitleaks/releases/latest" | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+    curl -L -o /tmp/gitleaks.tar.gz \
+      "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+    tar -xzf /tmp/gitleaks.tar.gz -C /tmp
+    sudo mv /tmp/gitleaks /usr/local/bin/
+    sudo chmod +x /usr/local/bin/gitleaks
+    rm /tmp/gitleaks.tar.gz
+    echo -e "${GREEN}✓ Gitleaks zainstalowany${NC}"
+fi
+
+# 8. Prettier - Code Formatter
+echo -e "\n${YELLOW}[8/9] Instalacja Prettier (Code Formatter)...${NC}"
+if command -v prettier &> /dev/null; then
+    echo -e "${GREEN}✓ Prettier już zainstalowany globalnie ($(prettier --version))${NC}"
+else
+    if command -v npm &> /dev/null; then
+        echo "  Instaluję Prettier globalnie..."
+        sudo npm install -g prettier
+        echo -e "${GREEN}✓ Prettier zainstalowany${NC}"
+    else
+        echo -e "${YELLOW}⚠️  npm nie jest zainstalowany - Prettier będzie używany z node_modules${NC}"
+    fi
+fi
+
+# 9. Instalacja Git Hooks
+echo -e "\n${YELLOW}[9/9] Instalacja Git Hooks...${NC}"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 
@@ -132,15 +162,25 @@ if command -v govulncheck &> /dev/null; then
 else
     echo "  • govulncheck:   ❌ (wymaga Go)"
 fi
+if command -v hadolint &> /dev/null; then
+    echo "  • Hadolint:      $(hadolint --version 2>&1 | cut -d' ' -f2)"
+else
+    echo "  • Hadolint:      ❌"
+fi
 if command -v dockle &> /dev/null; then
     echo "  • Dockle:        $(dockle --version 2>&1 | cut -d' ' -f2)"
 else
     echo "  • Dockle:        ❌"
 fi
-if command -v hadolint &> /dev/null; then
-    echo "  • Hadolint:      $(hadolint --version 2>&1 | cut -d' ' -f2)"
+if command -v gitleaks &> /dev/null; then
+    echo "  • Gitleaks:      $(gitleaks version 2>&1 | head -n1 | cut -d' ' -f2)"
 else
-    echo "  • Hadolint:      ❌"
+    echo "  • Gitleaks:      ❌"
+fi
+if command -v prettier &> /dev/null; then
+    echo "  • Prettier:      $(prettier --version 2>&1)"
+else
+    echo "  • Prettier:      ❌ (będzie używany z node_modules)"
 fi
 
 if [ -L "$REPO_ROOT/.git/hooks/pre-commit" ]; then

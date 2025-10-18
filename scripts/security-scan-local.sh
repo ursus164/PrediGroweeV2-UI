@@ -1,9 +1,11 @@
 #!/bin/bash
 
 # Local Security Scan Script for PrediGroweeV2-UI
+# ZAWSZE SKANUJE CAŁE REPO - nie tylko zmienione pliki
 # Run this before pushing to catch issues early
 
-set -e
+# Nie przerywamy na błędach - chcemy zobaczyć wszystkie wyniki
+# set -e
 
 # Colors
 RED='\033[0;31m'
@@ -16,6 +18,9 @@ echo -e "${BLUE}=====================================${NC}"
 echo -e "${BLUE}Frontend Security Scan (Local)${NC}"
 echo -e "${BLUE}=====================================${NC}"
 echo ""
+
+# Licznik błędów
+TOTAL_ERRORS=0
 
 # Check if required tools are installed
 echo -e "${YELLOW}Checking available tools...${NC}"
@@ -47,7 +52,10 @@ if command -v hadolint &> /dev/null; then
     for dockerfile in Dockerfile.dev Dockerfile.prod; do
         if [ -f "$dockerfile" ]; then
             echo "  Checking $dockerfile..."
-            hadolint --failure-threshold style "$dockerfile" || echo -e "    ${RED}⚠️  Issues found${NC}"
+            if ! hadolint --failure-threshold style "$dockerfile"; then
+                echo -e "    ${RED}⚠️  Hadolint found issues${NC}"
+                TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+            fi
         fi
     done
 else
@@ -58,7 +66,10 @@ echo ""
 # 2. TypeScript Type Check
 echo -e "${BLUE}[2/8] Running TypeScript Type Check...${NC}"
 if [ -f "package.json" ]; then
-    npm run type-check || echo -e "${RED}⚠️  Type errors found${NC}"
+    if ! npm run type-check; then
+        echo -e "${RED}⚠️  Type errors found${NC}"
+        TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+    fi
 else
     echo -e "${YELLOW}⚠️  package.json not found, skipping...${NC}"
 fi
@@ -67,7 +78,10 @@ echo ""
 # 3. ESLint
 echo -e "${BLUE}[3/8] Running ESLint...${NC}"
 if [ -f "package.json" ]; then
-    npm run lint || echo -e "${RED}⚠️  Lint errors found${NC}"
+    if ! npm run lint; then
+        echo -e "${RED}⚠️  Lint errors found${NC}"
+        TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+    fi
 else
     echo -e "${YELLOW}⚠️  package.json not found, skipping...${NC}"
 fi
@@ -78,7 +92,10 @@ echo -e "${BLUE}[4/8] Running Prettier...${NC}"
 if command -v prettier &> /dev/null || [ -f "node_modules/.bin/prettier" ]; then
     PRETTIER_CMD="prettier"
     [ -f "node_modules/.bin/prettier" ] && PRETTIER_CMD="npx prettier"
-    $PRETTIER_CMD --check "**/*.{ts,tsx,js,jsx,json,css,scss}" || echo -e "${RED}⚠️  Formatting issues found${NC}"
+    if ! $PRETTIER_CMD --check "**/*.{ts,tsx,js,jsx,json,css,scss}"; then
+        echo -e "${RED}⚠️  Formatting issues found${NC}"
+        TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+    fi
 else
     echo -e "${YELLOW}⚠️  prettier not installed, skipping...${NC}"
 fi
@@ -87,7 +104,10 @@ echo ""
 # 5. NPM Audit
 echo -e "${BLUE}[5/8] Running npm audit...${NC}"
 if [ -f "package.json" ]; then
-    npm audit --audit-level=high || echo -e "${RED}⚠️  Vulnerabilities found${NC}"
+    if ! npm audit --audit-level=high; then
+        echo -e "${RED}⚠️  Vulnerabilities found${NC}"
+        TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+    fi
 else
     echo -e "${YELLOW}⚠️  package.json not found, skipping...${NC}"
 fi
@@ -98,18 +118,22 @@ echo -e "${BLUE}[6/8] Building Docker images and scanning with Trivy...${NC}"
 if command -v docker &> /dev/null && command -v trivy &> /dev/null; then
     for dockerfile in dev prod; do
         echo "  Building frontend:$dockerfile..."
-        docker build -f Dockerfile.$dockerfile -t frontend:$dockerfile . || {
+        if ! docker build -f Dockerfile.$dockerfile -t frontend:$dockerfile .; then
             echo -e "${RED}⚠️  Build failed for $dockerfile${NC}"
+            TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
             continue
-        }
+        fi
         
         echo "  Scanning frontend:$dockerfile with Trivy..."
-        trivy image \
+        if ! trivy image \
             --severity CRITICAL,HIGH,MEDIUM,LOW \
             --scanners vuln,secret \
             --ignore-unfixed \
             --timeout 15m \
-            frontend:$dockerfile || echo -e "${RED}⚠️  Vulnerabilities found${NC}"
+            frontend:$dockerfile; then
+            echo -e "${RED}⚠️  Trivy found vulnerabilities in $dockerfile${NC}"
+            TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+        fi
     done
 else
     echo -e "${YELLOW}⚠️  docker or trivy not installed, skipping...${NC}"
@@ -125,7 +149,10 @@ if command -v syft &> /dev/null && command -v grype &> /dev/null; then
         syft frontend:prod -o spdx-json > ./security-reports/sbom/frontend-sbom.json
         
         echo "  Scanning SBOM with Grype..."
-        grype sbom:./security-reports/sbom/frontend-sbom.json --fail-on medium || echo -e "${RED}⚠️  Vulnerabilities found${NC}"
+        if ! grype sbom:./security-reports/sbom/frontend-sbom.json --fail-on medium; then
+            echo -e "${RED}⚠️  Grype found vulnerabilities${NC}"
+            TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+        fi
     else
         echo -e "${YELLOW}⚠️  frontend:prod image not found, build it first${NC}"
     fi
@@ -137,7 +164,10 @@ echo ""
 # 8. Secret Scanning with Gitleaks
 echo -e "${BLUE}[8/8] Running Gitleaks (secret scanning)...${NC}"
 if command -v gitleaks &> /dev/null; then
-    gitleaks detect --no-git --verbose || echo -e "${RED}⚠️  Secrets found${NC}"
+    if ! gitleaks detect --no-git --verbose; then
+        echo -e "${RED}⚠️  Gitleaks found secrets${NC}"
+        TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+    fi
 else
     echo -e "${YELLOW}⚠️  gitleaks not installed, skipping...${NC}"
 fi
@@ -145,13 +175,24 @@ echo ""
 
 # Summary
 echo -e "${BLUE}=====================================${NC}"
-echo -e "${GREEN}✅ Local security scan completed!${NC}"
-echo -e "${BLUE}=====================================${NC}"
-echo ""
-echo -e "Reports saved in: ${YELLOW}./security-reports/${NC}"
-echo ""
-echo -e "${YELLOW}Note: This is a local scan. Full CI/CD scan will run on push.${NC}"
-echo -e "${YELLOW}Install missing tools with: scripts/install-security-tools.sh${NC}"
-echo ""
-
-exit 0
+if [ $TOTAL_ERRORS -eq 0 ]; then
+    echo -e "${GREEN}✅ All security checks passed!${NC}"
+    echo -e "${BLUE}=====================================${NC}"
+    echo ""
+    echo -e "Reports saved in: ${YELLOW}./security-reports/${NC}"
+    echo ""
+    echo -e "${YELLOW}Note: This is a local scan. Full CI/CD scan will run on push.${NC}"
+    echo -e "${YELLOW}Install missing tools with: scripts/install-security-tools.sh${NC}"
+    echo ""
+    exit 0
+else
+    echo -e "${RED}❌ Security scan completed with $TOTAL_ERRORS errors/warnings${NC}"
+    echo -e "${BLUE}=====================================${NC}"
+    echo ""
+    echo -e "Reports saved in: ${YELLOW}./security-reports/${NC}"
+    echo ""
+    echo -e "${RED}Fix issues before pushing to repository!${NC}"
+    echo -e "${YELLOW}Install missing tools with: scripts/install-security-tools.sh${NC}"
+    echo ""
+    exit 1
+fi
