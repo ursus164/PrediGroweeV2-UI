@@ -58,7 +58,7 @@ jobs:
         with:
           image: frontend:${{ matrix.dockerfile }}
           exit-code: 0
-          exit-level: WARN
+          failure-threshold: WARN
         continue-on-error: true
 
   npm-audit:
@@ -94,12 +94,22 @@ jobs:
       - name: Build Docker image
         run: docker build -f Dockerfile.dev -t frontend:dev .
 
-      - name: Run Trivy vulnerability scanner
+      - name: Run Trivy vulnerability scanner (SARIF for Security tab)
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: frontend:dev
           format: 'sarif'
           output: 'trivy-results-dev.sarif'
+          exit-code: 0
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          timeout: 15m
+
+      - name: Run Trivy vulnerability scanner (Table for logs)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: frontend:dev
+          format: 'table'
           exit-code: 1
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
@@ -122,12 +132,22 @@ jobs:
       - name: Build Docker image
         run: docker build -f Dockerfile.prod -t frontend:prod .
 
-      - name: Run Trivy vulnerability scanner
+      - name: Run Trivy vulnerability scanner (SARIF for Security tab)
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: frontend:prod
           format: 'sarif'
           output: 'trivy-results-prod.sarif'
+          exit-code: 0
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          timeout: 15m
+
+      - name: Run Trivy vulnerability scanner (Table for logs)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: frontend:prod
+          format: 'table'
           exit-code: 1
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
