@@ -12,6 +12,7 @@ on:
 permissions:
   contents: read
   security-events: write
+  actions: read
 
 # Security Policy:
 # - CRITICAL/HIGH CVE → Pipeline FAILS (must fix)
@@ -23,6 +24,7 @@ jobs:
     name: Hadolint - Dockerfile Best Practices
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         dockerfile: [Dockerfile.dev, Dockerfile.prod]
     steps:
@@ -40,6 +42,7 @@ jobs:
     name: Dockle - Dockerfile Security
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         dockerfile: [Dockerfile.dev, Dockerfile.prod]
     steps:
