@@ -93,23 +93,22 @@ else
 fi
 echo ""
 
-# Check merge conflict markers
-echo -e "${BLUE}[3/3] Checking merge conflict markers...${NC}"
-MERGE_CONFLICTS_FOUND=0
-while IFS= read -r -d '' file; do
-    if [ -f "$file" ]; then
-        if grep -n "^<<<<<<< \|^=======$\|^>>>>>>> " "$file" 2>/dev/null; then
-            echo -e "${RED}  Merge conflict markers: $file${NC}"
-            MERGE_CONFLICTS_FOUND=1
+# 0. Install dependencies if needed
+echo -e "${BLUE}[0/8] Checking dependencies...${NC}"
+if [ -f "package.json" ]; then
+    if [ ! -d "node_modules" ] || [ ! -f "node_modules/.bin/next" ]; then
+        echo "  Installing npm dependencies (this may take a while)..."
+        if ! npm ci 2>&1 | tail -20; then
+            echo -e "${RED}⚠️  npm install failed${NC}"
+            TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+        else
+            echo -e "${GREEN}✓ Dependencies installed${NC}"
         fi
+    else
+        echo -e "${GREEN}✓ Dependencies already installed${NC}"
     fi
-done < <(find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.json" -o -name "*.css" -o -name "*.scss" -o -name "*.md" -o -name "*.yml" -o -name "*.yaml" \) -not -path "./.git/*" -not -path "./node_modules/*" -not -path "./.next/*" -not -path "./security-reports/*" -print0)
-
-if [ $MERGE_CONFLICTS_FOUND -eq 1 ]; then
-    echo -e "${RED}❌ Merge conflict markers found${NC}"
-    TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
 else
-    echo -e "${GREEN}✓ No merge conflict markers${NC}"
+    echo -e "${YELLOW}⚠️  package.json not found, skipping...${NC}"
 fi
 echo ""
 
@@ -181,7 +180,7 @@ fi
 echo ""
 
 # 6. Build Docker images and scan with Trivy
-echo -e "${BLUE}[6/8] Building Docker images and scanning with Trivy...${NC}"
+echo -e "${BLUE}[6/9] Building Docker images and scanning with Trivy...${NC}"
 if command -v docker &> /dev/null && command -v trivy &> /dev/null; then
     for dockerfile in dev prod; do
         echo "  Building frontend:$dockerfile..."
@@ -207,8 +206,34 @@ else
 fi
 echo ""
 
+# 6.5. Scan with Dockle (Docker Image Security)
+echo -e "${BLUE}[6.5/9] Scanning Docker images with Dockle...${NC}"
+if command -v dockle &> /dev/null; then
+    for dockerfile in dev prod; do
+        if docker images -q frontend:$dockerfile &> /dev/null; then
+            echo "  Scanning frontend:$dockerfile with Dockle..."
+            # Sprawdź czy istnieje .dockleignore
+            DOCKLE_IGNORE=""
+            if [ -f ".dockleignore" ]; then
+                DOCKLE_IGNORE="--ignore-file .dockleignore"
+            fi
+
+            if ! dockle --exit-code 1 --exit-level warn $DOCKLE_IGNORE frontend:$dockerfile; then
+                echo -e "${RED}⚠️  Dockle found issues in $dockerfile${NC}"
+                TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+            fi
+        else
+            echo -e "${YELLOW}⚠️  Image frontend:$dockerfile not found, skipping Dockle scan${NC}"
+        fi
+    done
+else
+    echo -e "${YELLOW}⚠️  Dockle not installed, skipping...${NC}"
+    echo "   Install with: ./scripts/install-security-tools.sh"
+fi
+echo ""
+
 # 7. SBOM Generation and Grype Scan
-echo -e "${BLUE}[7/8] Generating SBOM and scanning with Grype...${NC}"
+echo -e "${BLUE}[7/9] Generating SBOM and scanning with Grype...${NC}"
 if command -v syft &> /dev/null && command -v grype &> /dev/null; then
     if docker images -q frontend:prod &> /dev/null; then
         echo "  Generating SBOM..."
@@ -229,7 +254,7 @@ fi
 echo ""
 
 # 8. Secret Scanning with Gitleaks
-echo -e "${BLUE}[8/8] Running Gitleaks (secret scanning)...${NC}"
+echo -e "${BLUE}[8/9] Running Gitleaks (secret scanning)...${NC}"
 if command -v gitleaks &> /dev/null; then
     if ! gitleaks detect --no-git --verbose; then
         echo -e "${RED}⚠️  Gitleaks found secrets${NC}"

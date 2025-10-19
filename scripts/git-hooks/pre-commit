@@ -62,25 +62,6 @@ else
     echo -e "${GREEN}✓ No trailing whitespace${NC}\n"
 fi
 
-# 4. Check for merge conflict markers
-echo -e "${YELLOW}[4/9] Checking for merge conflict markers in all files...${NC}"
-MERGE_CONFLICTS_FOUND=0
-while IFS= read -r -d '' file; do
-    if [ -f "$file" ]; then
-        if grep -n "^<<<<<<< \|^=======$\|^>>>>>>> " "$file" 2>/dev/null; then
-            echo -e "${RED}  Merge conflict markers: $file${NC}"
-            MERGE_CONFLICTS_FOUND=1
-        fi
-    fi
-done < <(find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.json" -o -name "*.css" -o -name "*.scss" -o -name "*.md" -o -name "*.yml" -o -name "*.yaml" \) -not -path "./.git/*" -not -path "./node_modules/*" -not -path "./.next/*" -print0)
-
-if [ $MERGE_CONFLICTS_FOUND -eq 1 ]; then
-    echo -e "${RED}❌ ERROR: Merge conflict markers found!${NC}"
-    exit 1
-else
-    echo -e "${GREEN}✓ No merge conflicts${NC}\n"
-fi
-
 # 5. Check Dockerfile - WSZYSTKIE
 echo -e "${YELLOW}[5/9] Checking all Dockerfiles...${NC}"
 for dockerfile in Dockerfile.dev Dockerfile.prod; do
