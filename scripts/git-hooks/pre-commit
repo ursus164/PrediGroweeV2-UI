@@ -14,7 +14,7 @@ echo -e "${GREEN}🔒 Running pre-commit security checks (full repository scan).
 # 1. Check for hardcoded secrets - CAŁE REPO
 echo -e "${YELLOW}[1/9] Checking for hardcoded secrets in all files...${NC}"
 # Pattern excludes environment variable reads (os.Getenv, process.env)
-if grep -rI '(password|secret|api[_-]?key|token|auth)["\s]*[:=]["\s]*[^"]{8,}' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.next 2>/dev/null | grep -v "os.Getenv" | grep -v "process.env" | grep -v "getenv"; then
+if grep -rI '(password|secret|api[_-]?key|token|auth)["\s]*[:=]["\s]*[^"]{8,}' . --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.next --exclude=pre-commit 2>/dev/null | grep -v "os.Getenv" | grep -v "process.env" | grep -v "getenv" | grep -v "Pattern"; then
     echo -e "${RED}❌ ERROR: Possible hardcoded secrets detected!${NC}"
     echo -e "${YELLOW}Remove sensitive data before committing.${NC}"
     exit 1
@@ -22,37 +22,64 @@ fi
 echo -e "${GREEN}✓ No hardcoded secrets${NC}\n"
 
 # 2. Check file sizes
-echo -e "${YELLOW}[2/9] Checking file sizes...${NC}"
+echo -e "${YELLOW}[2/9] Checking all file sizes in repository...${NC}"
 MAX_SIZE=1048576 # 1MB
-for file in $(git diff --cached --name-only); do
+FILES_TOO_LARGE=0
+while IFS= read -r -d '' file; do
     if [ -f "$file" ]; then
         size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
         if [ "$size" -gt "$MAX_SIZE" ]; then
-            echo -e "${RED}❌ ERROR: File $file is too large ($(($size / 1024))KB > 1MB)${NC}"
-            echo -e "${YELLOW}Use Git LFS for large files.${NC}"
-            exit 1
+            echo -e "${RED}  File too large: $file ($(($size / 1024))KB > 1MB)${NC}"
+            FILES_TOO_LARGE=1
         fi
     fi
-done
+done < <(find . -type f -not -path "./.git/*" -not -path "./node_modules/*" -not -path "./.next/*" -not -path "./dist/*" -not -path "./build/*" -print0)
+
+if [ $FILES_TOO_LARGE -eq 1 ]; then
+    echo -e "${RED}❌ ERROR: Files too large detected!${NC}"
+    echo -e "${YELLOW}Use Git LFS for large files.${NC}"
+    exit 1
+fi
 echo -e "${GREEN}✓ All files within size limit${NC}\n"
 
 # 3. Check for trailing whitespace
-echo -e "${YELLOW}[3/9] Checking for trailing whitespace...${NC}"
-if git diff --cached --check; then
-    echo -e "${GREEN}✓ No trailing whitespace${NC}\n"
-else
+echo -e "${YELLOW}[3/9] Checking for trailing whitespace in all files...${NC}"
+TRAILING_WS_FOUND=0
+while IFS= read -r -d '' file; do
+    if [ -f "$file" ]; then
+        if grep -q '[[:space:]]$' "$file" 2>/dev/null; then
+            echo -e "${RED}  Trailing whitespace: $file${NC}"
+            TRAILING_WS_FOUND=1
+        fi
+    fi
+done < <(find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.json" -o -name "*.css" -o -name "*.scss" -o -name "*.md" -o -name "*.yml" -o -name "*.yaml" \) -not -path "./.git/*" -not -path "./node_modules/*" -not -path "./.next/*" -print0)
+
+if [ $TRAILING_WS_FOUND -eq 1 ]; then
     echo -e "${RED}❌ ERROR: Trailing whitespace found!${NC}"
-    echo -e "${YELLOW}Fix with: git diff --cached --check${NC}"
+    echo -e "${YELLOW}Fix with: sed -i 's/[[:space:]]*$//' <file>${NC}"
     exit 1
+else
+    echo -e "${GREEN}✓ No trailing whitespace${NC}\n"
 fi
 
 # 4. Check for merge conflict markers
-echo -e "${YELLOW}[4/9] Checking for merge conflict markers...${NC}"
-if git diff --cached --name-only | xargs grep -n "^<<<<<<< \|^=======$\|^>>>>>>> " 2>/dev/null; then
+echo -e "${YELLOW}[4/9] Checking for merge conflict markers in all files...${NC}"
+MERGE_CONFLICTS_FOUND=0
+while IFS= read -r -d '' file; do
+    if [ -f "$file" ]; then
+        if grep -n "^<<<<<<< \|^=======$\|^>>>>>>> " "$file" 2>/dev/null; then
+            echo -e "${RED}  Merge conflict markers: $file${NC}"
+            MERGE_CONFLICTS_FOUND=1
+        fi
+    fi
+done < <(find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.json" -o -name "*.css" -o -name "*.scss" -o -name "*.md" -o -name "*.yml" -o -name "*.yaml" \) -not -path "./.git/*" -not -path "./node_modules/*" -not -path "./.next/*" -print0)
+
+if [ $MERGE_CONFLICTS_FOUND -eq 1 ]; then
     echo -e "${RED}❌ ERROR: Merge conflict markers found!${NC}"
     exit 1
+else
+    echo -e "${GREEN}✓ No merge conflicts${NC}\n"
 fi
-echo -e "${GREEN}✓ No merge conflicts${NC}\n"
 
 # 5. Check Dockerfile - WSZYSTKIE
 echo -e "${YELLOW}[5/9] Checking all Dockerfiles...${NC}"

@@ -46,6 +46,73 @@ check_tool gitleaks
 
 echo ""
 
+# File Hygiene Checks
+echo -e "${BLUE}=====================================${NC}"
+echo -e "${BLUE}File Hygiene Checks${NC}"
+echo -e "${BLUE}=====================================${NC}"
+
+# Check file sizes
+echo -e "${BLUE}[1/3] Checking file sizes...${NC}"
+MAX_SIZE=1048576 # 1MB
+FILES_TOO_LARGE=0
+while IFS= read -r -d '' file; do
+    if [ -f "$file" ]; then
+        size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
+        if [ "$size" -gt "$MAX_SIZE" ]; then
+            echo -e "${RED}  File too large: $file ($(($size / 1024))KB > 1MB)${NC}"
+            FILES_TOO_LARGE=1
+        fi
+    fi
+done < <(find . -type f -not -path "./.git/*" -not -path "./node_modules/*" -not -path "./.next/*" -not -path "./dist/*" -not -path "./build/*" -not -path "./security-reports/*" -print0)
+
+if [ $FILES_TOO_LARGE -eq 1 ]; then
+    echo -e "${RED}❌ Large files detected - consider using Git LFS${NC}"
+    TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+else
+    echo -e "${GREEN}✓ All files within size limit${NC}"
+fi
+echo ""
+
+# Check trailing whitespace
+echo -e "${BLUE}[2/3] Checking trailing whitespace...${NC}"
+TRAILING_WS_FOUND=0
+while IFS= read -r -d '' file; do
+    if [ -f "$file" ]; then
+        if grep -q '[[:space:]]$' "$file" 2>/dev/null; then
+            echo -e "${RED}  Trailing whitespace: $file${NC}"
+            TRAILING_WS_FOUND=1
+        fi
+    fi
+done < <(find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.json" -o -name "*.css" -o -name "*.scss" -o -name "*.md" -o -name "*.yml" -o -name "*.yaml" \) -not -path "./.git/*" -not -path "./node_modules/*" -not -path "./.next/*" -not -path "./security-reports/*" -print0)
+
+if [ $TRAILING_WS_FOUND -eq 1 ]; then
+    echo -e "${RED}❌ Trailing whitespace found${NC}"
+    TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+else
+    echo -e "${GREEN}✓ No trailing whitespace${NC}"
+fi
+echo ""
+
+# Check merge conflict markers
+echo -e "${BLUE}[3/3] Checking merge conflict markers...${NC}"
+MERGE_CONFLICTS_FOUND=0
+while IFS= read -r -d '' file; do
+    if [ -f "$file" ]; then
+        if grep -n "^<<<<<<< \|^=======$\|^>>>>>>> " "$file" 2>/dev/null; then
+            echo -e "${RED}  Merge conflict markers: $file${NC}"
+            MERGE_CONFLICTS_FOUND=1
+        fi
+    fi
+done < <(find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.json" -o -name "*.css" -o -name "*.scss" -o -name "*.md" -o -name "*.yml" -o -name "*.yaml" \) -not -path "./.git/*" -not -path "./node_modules/*" -not -path "./.next/*" -not -path "./security-reports/*" -print0)
+
+if [ $MERGE_CONFLICTS_FOUND -eq 1 ]; then
+    echo -e "${RED}❌ Merge conflict markers found${NC}"
+    TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+else
+    echo -e "${GREEN}✓ No merge conflict markers${NC}"
+fi
+echo ""
+
 # 1. Hadolint - Dockerfile linting
 echo -e "${BLUE}[1/8] Running Hadolint (Dockerfile linting)...${NC}"
 if command -v hadolint &> /dev/null; then
@@ -123,7 +190,7 @@ if command -v docker &> /dev/null && command -v trivy &> /dev/null; then
             TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
             continue
         fi
-        
+
         echo "  Scanning frontend:$dockerfile with Trivy..."
         if ! trivy image \
             --severity CRITICAL,HIGH,MEDIUM,LOW \
@@ -147,7 +214,7 @@ if command -v syft &> /dev/null && command -v grype &> /dev/null; then
         echo "  Generating SBOM..."
         mkdir -p ./security-reports/sbom
         syft frontend:prod -o spdx-json > ./security-reports/sbom/frontend-sbom.json
-        
+
         echo "  Scanning SBOM with Grype..."
         if ! grype sbom:./security-reports/sbom/frontend-sbom.json --fail-on medium; then
             echo -e "${RED}⚠️  Grype found vulnerabilities${NC}"

@@ -366,10 +366,75 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  file-hygiene:
+    name: File Hygiene Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check file sizes
+        run: |
+          echo "Checking file sizes..."
+          FILES_TOO_LARGE=0
+          while IFS= read -r -d '' file; do
+            if [ -f "$file" ]; then
+              size=$(stat -c%s "$file" 2>/dev/null || echo 0)
+              if [ $size -gt 1048576 ]; then  # 1MB
+                echo "⚠️  File too large: $file ($(($size / 1024))KB > 1MB)"
+                FILES_TOO_LARGE=1
+              fi
+            fi
+          done < <(find . -type f -not -path "./.git/*" -not -path "./node_modules/*" -not -path "./.next/*" -not -path "./dist/*" -not -path "./build/*" -print0)
+
+          if [ $FILES_TOO_LARGE -eq 1 ]; then
+            echo "❌ Large files detected - consider using Git LFS"
+            exit 1
+          fi
+          echo "✅ All files within size limit"
+
+      - name: Check trailing whitespace
+        run: |
+          echo "Checking trailing whitespace..."
+          TRAILING_WS_FOUND=0
+          while IFS= read -r -d '' file; do
+            if [ -f "$file" ]; then
+              if grep -q '[[:space:]]$' "$file" 2>/dev/null; then
+                echo "⚠️  Trailing whitespace: $file"
+                TRAILING_WS_FOUND=1
+              fi
+            fi
+          done < <(find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.json" -o -name "*.css" -o -name "*.scss" -o -name "*.md" -o -name "*.yml" -o -name "*.yaml" \) -not -path "./.git/*" -not -path "./node_modules/*" -not -path "./.next/*" -print0)
+
+          if [ $TRAILING_WS_FOUND -eq 1 ]; then
+            echo "❌ Trailing whitespace found"
+            exit 1
+          fi
+          echo "✅ No trailing whitespace"
+
+      - name: Check merge conflict markers
+        run: |
+          echo "Checking merge conflict markers..."
+          MERGE_CONFLICTS_FOUND=0
+          while IFS= read -r -d '' file; do
+            if [ -f "$file" ]; then
+              if grep -n "^<<<<<<< \|^=======$\|^>>>>>>> " "$file" 2>/dev/null; then
+                echo "⚠️  Merge conflict markers: $file"
+                MERGE_CONFLICTS_FOUND=1
+              fi
+            fi
+          done < <(find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.json" -o -name "*.css" -o -name "*.scss" -o -name "*.md" -o -name "*.yml" -o -name "*.yaml" \) -not -path "./.git/*" -not -path "./node_modules/*" -not -path "./.next/*" -print0)
+
+          if [ $MERGE_CONFLICTS_FOUND -eq 1 ]; then
+            echo "❌ Merge conflict markers found"
+            exit 1
+          fi
+          echo "✅ No merge conflict markers"
+
   security-summary:
     name: Comprehensive Security Report
     runs-on: ubuntu-latest
-    needs: [hadolint, dockerfile-lint, npm-audit, trivy-scan-dev, trivy-scan-prod, grype-scan, typescript-check, eslint-security, eslint-check, prettier-check, build-check, secret-scan]
+    needs: [hadolint, dockerfile-lint, npm-audit, trivy-scan-dev, trivy-scan-prod, grype-scan, typescript-check, eslint-security, eslint-check, prettier-check, build-check, secret-scan, file-hygiene]
     if: always()
     steps:
       - name: Download all artifacts
@@ -482,6 +547,7 @@ jobs:
           echo "| Container CVE Scan (Trivy) | Completed (dev + prod) |" >> $GITHUB_STEP_SUMMARY
           echo "| SBOM Generation & Scan (Grype) | Completed |" >> $GITHUB_STEP_SUMMARY
           echo "| Secret Detection (Gitleaks) | Completed |" >> $GITHUB_STEP_SUMMARY
+          echo "| File Hygiene (sizes, whitespace, conflicts) | Completed |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "---" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
