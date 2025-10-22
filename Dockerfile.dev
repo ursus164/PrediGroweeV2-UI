@@ -2,10 +2,21 @@ FROM node:18-alpine AS base
 
 # Build stage
 FROM base AS builder
+
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
+
 WORKDIR /app
-COPY package*.json ./
+
+RUN chown nextjs:nodejs /app
+
+COPY --chown=nextjs:nodejs package*.json ./
+
+USER nextjs
+
 RUN npm ci
-COPY . .
+
+COPY --chown=nextjs:nodejs . .
 
 # Add build args for env variables
 ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID
@@ -24,13 +35,6 @@ ENV NEXT_PUBLIC_IMAGES_SERVICE_URL=$NEXT_PUBLIC_IMAGES_SERVICE_URL
 ENV AUTH_SERVICE_INTERNAL_URL=$AUTH_SERVICE_INTERNAL_URL
 
 ENV NODE_ENV=development
-
-# Create non-root user (optional for dev, but good practice)
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs && \
-    chown -R nextjs:nodejs /app
-
-USER nextjs
 
 # Health check for development
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
