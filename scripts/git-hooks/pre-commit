@@ -33,7 +33,7 @@ while IFS= read -r -d '' file; do
             FILES_TOO_LARGE=1
         fi
     fi
-done < <(find . -type f -not -path "./.git/*" -not -path "./node_modules/*" -not -path "./.next/*" -not -path "./dist/*" -not -path "./build/*" -print0)
+done < <(find . -type f -not -path "./.git/*" -not -path "./node_modules/*" -not -path "./.next/*" -not -path "./dist/*" -not -path "./build/*" -not -path "./security-reports/*" -print0)
 
 if [ $FILES_TOO_LARGE -eq 1 ]; then
     echo -e "${RED}❌ ERROR: Files too large detected!${NC}"
@@ -90,7 +90,8 @@ echo -e "${GREEN}✓ All Dockerfiles checked${NC}\n"
 echo -e "${YELLOW}[6/9] Running ESLint on all files...${NC}"
 if [ -f "package.json" ] && command -v npm &> /dev/null; then
     ESLINT_OUTPUT=$(npm run lint 2>&1)
-    if echo "$ESLINT_OUTPUT" | grep -i "error"; then
+    # Check for actual ESLint errors (not just the word "error" in success message)
+    if [ $? -ne 0 ]; then
         echo -e "${RED}❌ ERROR: ESLint found errors:${NC}"
         echo "$ESLINT_OUTPUT"
         exit 1
@@ -123,10 +124,10 @@ if command -v prettier &> /dev/null || [ -f "node_modules/.bin/prettier" ]; then
     [ -f "node_modules/.bin/prettier" ] && PRETTIER_CMD="npx prettier"
     PRETTIER_OUTPUT=$($PRETTIER_CMD --check "src/**/*.{ts,tsx,js,jsx}" 2>&1)
     if [ $? -ne 0 ]; then
-        echo -e "${RED}❌ ERROR: Prettier formatting issues:${NC}"
-        echo "$PRETTIER_OUTPUT" | head -20
-        echo -e "${YELLOW}Run: prettier --write <files>${NC}"
-        exit 1
+        echo -e "${YELLOW}⚠️  Formatting issues found - fixing automatically...${NC}"
+        $PRETTIER_CMD --write "src/**/*.{ts,tsx,js,jsx}"
+        git add -u
+        echo -e "${GREEN}✓ Formatting fixed and staged${NC}\n"
     else
         echo -e "${GREEN}✓ Prettier OK${NC}\n"
     fi

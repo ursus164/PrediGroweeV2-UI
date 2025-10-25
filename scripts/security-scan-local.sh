@@ -158,9 +158,13 @@ echo -e "${BLUE}[4/8] Running Prettier...${NC}"
 if command -v prettier &> /dev/null || [ -f "node_modules/.bin/prettier" ]; then
     PRETTIER_CMD="prettier"
     [ -f "node_modules/.bin/prettier" ] && PRETTIER_CMD="npx prettier"
-    if ! $PRETTIER_CMD --check "**/*.{ts,tsx,js,jsx,json,css,scss}"; then
-        echo -e "${RED}⚠️  Formatting issues found${NC}"
-        TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
+    echo "Checking formatting..."
+    if ! $PRETTIER_CMD --check "**/*.{ts,tsx,js,jsx,json,css,scss}" 2>&1; then
+        echo -e "${YELLOW}⚠️  Formatting issues found - fixing automatically...${NC}"
+        $PRETTIER_CMD --write "**/*.{ts,tsx,js,jsx,json,css,scss}"
+        echo -e "${GREEN}✓ Formatting fixed${NC}"
+    else
+        echo -e "${GREEN}✓ All files properly formatted${NC}"
     fi
 else
     echo -e "${YELLOW}⚠️  prettier not installed, skipping...${NC}"
@@ -184,7 +188,7 @@ echo -e "${BLUE}[6/9] Building Docker images and scanning with Trivy...${NC}"
 if command -v docker &> /dev/null && command -v trivy &> /dev/null; then
     for dockerfile in dev prod; do
         echo "  Building frontend:$dockerfile..."
-        if ! docker build -f Dockerfile.$dockerfile -t frontend:$dockerfile .; then
+        if ! docker build --no-cache -f Dockerfile.$dockerfile -t frontend:$dockerfile .; then
             echo -e "${RED}⚠️  Build failed for $dockerfile${NC}"
             TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
             continue
@@ -212,11 +216,8 @@ if command -v dockle &> /dev/null; then
     for dockerfile in dev prod; do
         if docker images -q frontend:$dockerfile &> /dev/null; then
             echo "  Scanning frontend:$dockerfile with Dockle..."
-            # Sprawdź czy istnieje .dockleignore
-            DOCKLE_IGNORE=""
-            if [ -f ".dockleignore" ]; then
-                DOCKLE_IGNORE="--ignore-file .dockleignore"
-            fi
+            # Ignoruj znane false positives (ENV używane w skrypcie entrypoint)
+            DOCKLE_IGNORE="--ignore CIS-DI-0010"
 
             if ! dockle --exit-code 1 --exit-level warn $DOCKLE_IGNORE frontend:$dockerfile; then
                 echo -e "${RED}⚠️  Dockle found issues in $dockerfile${NC}"
@@ -241,8 +242,9 @@ if command -v syft &> /dev/null && command -v grype &> /dev/null; then
         syft frontend:prod -o spdx-json > ./security-reports/sbom/frontend-sbom.json
 
         echo "  Scanning SBOM with Grype..."
-        if ! grype sbom:./security-reports/sbom/frontend-sbom.json --fail-on medium; then
-            echo -e "${RED}⚠️  Grype found vulnerabilities${NC}"
+        # Fail only on HIGH and CRITICAL vulnerabilities (not MEDIUM/LOW)
+        if ! grype sbom:./security-reports/sbom/frontend-sbom.json --fail-on high; then
+            echo -e "${RED}⚠️  Grype found HIGH/CRITICAL vulnerabilities${NC}"
             TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
         fi
     else

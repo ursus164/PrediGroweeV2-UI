@@ -11,7 +11,7 @@ interface Props {
 
 export default function SortableRow({ item, isEditMode }: Props) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: item?.id,
+    id: item?.id ?? 0,
   });
 
   const style = {
