@@ -25,7 +25,7 @@
     "axios": "^1.7.7",
     "axios-case-converter": "^1.1.1",
     "formik": "^2.4.6",
-    "next": "14.2.7",
+    "next": "^14.2.33",
     "react": "^18",
     "react-dom": "^18",
     "react-google-recaptcha": "^3.1.0",
@@ -48,15 +48,15 @@
     "@typescript-eslint/parser": "^8.4.0",
     "axios": "^1.7.7",
     "eslint": "^8.57.0",
-    "eslint-config-next": "^14.2.7",
+    "eslint-config-next": "^14.2.33",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-jsx-a11y": "^6.9.0",
     "eslint-plugin-prettier": "^5.2.1",
     "eslint-plugin-react": "^7.35.1",
     "eslint-plugin-react-hooks": "^4.6.2",
     "prettier": "^3.3.3",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
+    "react": "^18",
+    "react-dom": "^18",
     "typescript": "^5.5.4"
   }
 }

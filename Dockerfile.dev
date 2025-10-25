@@ -1,4 +1,9 @@
-FROM node:18-alpine AS base
+FROM node:22-alpine AS base
+
+# Update Alpine packages to fix CVE-2025-9230, CVE-2025-9231, CVE-2025-9232
+RUN apk update && \
+    apk upgrade --no-cache && \
+    apk add --no-cache dumb-init
 
 # Build stage
 FROM base AS builder
@@ -24,6 +29,9 @@ ARG NEXT_PUBLIC_AUTH_SERVICE_URL
 ARG NEXT_PUBLIC_QUIZ_SERVICE_URL
 ARG NEXT_PUBLIC_STATS_SERVICE_URL
 ARG NEXT_PUBLIC_IMAGES_SERVICE_URL
+# hadolint ignore=DL3007
+# Note: AUTH_SERVICE_INTERNAL_URL is an internal service URL (e.g., http://auth:8081)
+# It's not a secret/credential, just a network endpoint for server-side API calls
 ARG AUTH_SERVICE_INTERNAL_URL
 
 # Set them as env variables for build time
@@ -32,6 +40,7 @@ ENV NEXT_PUBLIC_AUTH_SERVICE_URL=$NEXT_PUBLIC_AUTH_SERVICE_URL
 ENV NEXT_PUBLIC_QUIZ_SERVICE_URL=$NEXT_PUBLIC_QUIZ_SERVICE_URL
 ENV NEXT_PUBLIC_STATS_SERVICE_URL=$NEXT_PUBLIC_STATS_SERVICE_URL
 ENV NEXT_PUBLIC_IMAGES_SERVICE_URL=$NEXT_PUBLIC_IMAGES_SERVICE_URL
+# Note: This is just a service URL, not sensitive data
 ENV AUTH_SERVICE_INTERNAL_URL=$AUTH_SERVICE_INTERNAL_URL
 
 ENV NODE_ENV=development
