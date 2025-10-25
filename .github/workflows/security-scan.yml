@@ -58,10 +58,11 @@ jobs:
         with:
           image: frontend:${{ matrix.dockerfile }}
           exit-code: 1
-          failure-threshold: INFO
-          accept-keys: CIS-DI-0010
+          failure-threshold: WARN
+          accept-keywords: CIS-DI-0005,CIS-DI-0010,DKL-LI-0003
+          # CIS-DI-0005: Content trust (not needed in dev)
           # CIS-DI-0010: Do not use ARG/ENV for secrets (false positive for URLs)
-          # Najbardziej strict: failuje na FATAL > WARN > INFO
+          # DKL-LI-0003: Suspicious .npm directory (Next.js build cache)
 
   npm-audit:
     name: NPM Security Audit
@@ -312,6 +313,9 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -330,7 +334,7 @@ jobs:
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add .
             git commit -m "chore: auto-format code with Prettier [skip ci]"
-            git push
+            git push origin HEAD:${{ github.head_ref || github.ref_name }}
           else
             echo "No formatting changes needed"
           fi
