@@ -243,12 +243,11 @@ jobs:
         with:
           name: sbom-frontend
 
-      - name: Scan with Grype
-        uses: anchore/scan-action@v3
-        with:
-          sbom: sbom-frontend.spdx.json
-          fail-build: true
-          severity-cutoff: high
+      - name: Scan with Grype (detailed output)
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+          grype sbom:sbom-frontend.spdx.json --fail-on high -o table
+        continue-on-error: false
 
   typescript-check:
     name: TypeScript Type Check
