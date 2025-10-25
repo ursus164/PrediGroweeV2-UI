@@ -323,7 +323,7 @@ jobs:
         run: npm ci
 
       - name: Run Prettier check
-        run: npx prettier --check "**/*.{ts,tsx,js,jsx,json,css,scss}"
+        run: npx prettier --check "**/*.{ts,tsx,js,jsx,json,css,scss}" --ignore-path .prettierignore
 
   build-check:
     name: Next.js Build Validation
