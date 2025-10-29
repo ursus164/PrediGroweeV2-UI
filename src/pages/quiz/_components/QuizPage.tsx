@@ -264,6 +264,7 @@ const QuizPage = ({
     if (mode === 'educational' && showCorrect && !imageSrc['3']) {
       fetchImage3();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, showCorrect, questionData?.id, imageSrc['3']]);
 
   // V3: fetch age3 + value3 only after Show Correct (educational)

@@ -1,4 +1,3 @@
-import TopNavBar from '@/components/ui/TopNavBar/TopNavBar';
 import {
   Alert,
   Box,
@@ -19,9 +18,14 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+
+function isString(v: unknown): v is string {
+  return typeof v === 'string';
+}
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import Link from 'next/link';
 import React from 'react';
+import TopNavBar from '@/components/ui/TopNavBar/TopNavBar';
 import AdminClient from '@/Clients/AdminClient';
 import { ADMIN_SERVICE_URL } from '@/Envs';
 
@@ -40,16 +44,10 @@ type UserProgressRow = {
   correct: number;
   lastActivity?: string | null;
 };
-
-
 type UnknownRec = Record<string, unknown>;
 
 function isNumber(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
-}
-
-function isString(v: unknown): v is string {
-  return typeof v === 'string';
 }
 
 function asNumber(v: unknown, fallback = 0): number {
@@ -77,10 +75,6 @@ function safeStr(s?: string | null, fallback = ''): string {
   if (s === null || s === undefined) return fallback;
   return s;
 }
-<<<<<<< HEAD
-
-=======
->>>>>>> 380579d3999f5542803cfd3b05122050410f9b71
 function normalizeUserRow(
   rec: UnknownRec,
   namesByUser: Map<number, UserSurveyName>

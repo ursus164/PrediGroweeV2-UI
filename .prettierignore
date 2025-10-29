@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs
+.next/
+dist/
+build/
+out/
+
+# Security reports (SBOM files can be large and auto-generated)
+security-reports/
+
+# Git
+.git/

@@ -137,6 +137,7 @@ export const QuestionDetailsModal: React.FC<QuestionDetailsDialogProps> = ({
       .then((res) => setDiff(res.data as DifficultySummary))
       .catch(() => setDiffError('Failed to load difficulty summary'))
       .finally(() => setDiffLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, question?.id]);
 
   // --- images on open
@@ -153,6 +154,7 @@ export const QuestionDetailsModal: React.FC<QuestionDetailsDialogProps> = ({
     } else {
       setShowImages(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, question?.id, defaultImagesExpanded, fetchImageFor]);
 
   if (!question || !editedQuestion) return null;
