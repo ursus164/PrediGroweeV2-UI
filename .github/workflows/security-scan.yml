@@ -15,9 +15,9 @@ permissions:
   actions: read
 
 # Security Policy:
-# - CRITICAL/HIGH CVE → Pipeline FAILS (must fix)
-# - MEDIUM/LOW CVE → Warning only (reported to Security tab)
-# - Infrastructure issues (Hadolint/Dockle) → Info only (no block)
+# - CRITICAL/HIGH CVE → Pipeline FAILS
+# - MEDIUM/LOW CVE → Warning only
+# - Infrastructure issues (Hadolint/Dockle) → Info only
 
 jobs:
   hadolint:
@@ -246,7 +246,7 @@ jobs:
       - name: Scan with Grype (detailed output)
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
-          grype sbom:sbom-frontend.spdx.json --fail-on high -o table
+          grype sbom:sbom-frontend.spdx.json --fail-on medium -o table
         continue-on-error: false
 
   typescript-check:
